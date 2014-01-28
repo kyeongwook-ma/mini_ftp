@@ -8,14 +8,58 @@ void logging(char *);
 packet *create_message(char *, int);
 void sig_handler(int signo);
 
-struct sockaddr_in clnt_addr;
+
+typedef struct sockaddr_in sock_addr;
+sock_addr clnt_addr;
+
+
+bool
+bind_serv_addr(int *serv_sock, sock_addr *serv_addr)
+{
+    return bind(*serv_sock, (struct sockaddr *)serv_addr, sizeof(*serv_addr));
+}
+
+bool
+listen_from_clnt(int *serv_sock, int capacity)
+{
+    return listen(*serv_sock, capacity);
+}
+
+int 
+create_serv_sock(sock_addr *serv_addr, int port)
+{
+    int serv_sock = socket(PF_INET, SOCK_STREAM, 0);
+    
+    memset(serv_addr, 0, sizeof(serv_addr));
+    serv_addr->sin_family = AF_INET;
+    serv_addr->sin_addr.s_addr = htonl(INADDR_ANY);
+    serv_addr->sin_port = htons(port);
+   
+    return serv_sock;
+}
+
+int
+init_IO_multiplexing(int serv_sock, fd_set *reads)
+{
+    FD_ZERO(reads);
+    FD_SET(serv_sock, reads);
+    return serv_sock;
+}
+
+void 
+close_serv(int serv_sock, fd_set *reads)
+{
+    FD_CLR(serv_sock, reads);
+    shutdown(serv_sock, SHUT_WR);
+    logging("closed");
+}
 
 int
 main(int argc, char *argv[])
 {
     int serv_sock, clnt_sock;
     int option = 1;
-    struct sockaddr_in serv_addr;
+    sock_addr serv_addr;
     struct timeval timeout;
     packet recv_msg;
     msg_header recv_header;
@@ -27,26 +71,20 @@ main(int argc, char *argv[])
     int fd_max, fd_num, i;
     char buf[BUF_SIZE] = {0, };
 
-    serv_sock=socket(PF_INET, SOCK_STREAM, 0);
-    memset(&serv_addr, 0, sizeof(serv_addr));
-    serv_addr.sin_family=AF_INET;
-    serv_addr.sin_addr.s_addr=htonl(INADDR_ANY);
-    serv_addr.sin_port=htons(atoi(argv[1]));
+    serv_sock = create_serv_sock(&serv_addr, atoi(argv[1]));
 
     signal(SIGINT, (void *)sig_handler);
 
-    if(bind(serv_sock, (struct sockaddr*)&serv_addr, sizeof(serv_addr)) == -1 )
+    if(bind_serv_addr(&serv_sock, &serv_addr) == -1 )
     {
         logging("connection error");
     }
-    if(listen(serv_sock, 5)==-1)
+    if(listen_from_clnt(&serv_sock, 5) ==-1)
     {	
         logging("listen error");
     }
 
-    FD_ZERO(&reads);
-    FD_SET(serv_sock, &reads);
-    fd_max = serv_sock;
+    fd_max = init_IO_multiplexing(serv_sock, &reads);
 
     while(1)
     {
@@ -73,6 +111,7 @@ main(int argc, char *argv[])
                     printf("client %s conncted\n", inet_ntoa(clnt_addr.sin_addr));
 
                     FD_SET(clnt_sock, &reads);
+                    
                     if(fd_max < clnt_sock)
                         fd_max = clnt_sock;
 
@@ -99,23 +138,19 @@ main(int argc, char *argv[])
                     // 바디크기 만큼 동적 할당
                     str_len = 0;
 
-                    while(str_len < body_size)
-                    {
+                    while(str_len < body_size) {
                         str_len = read(i, (void *)&recv_msg.body, body_size);
                     }
 
                     recv_msg.header = recv_header;
 
                     // close 처리
-                    if(str_len == 0 || msg_type == LOGOUT_REQ)
-                    {
-                        FD_CLR(i, &reads);
-                        shutdown(i, SHUT_WR);
-                        logging("closed");
+                    if(str_len == 0 || msg_type == LOGOUT_REQ) {
+                        close_serv(i, &reads);
                     }
 
-                    else
-                    {		
+                    else  {		
+                        
                         char *result = 0;
 
                         int msg = ntohs(recv_msg.header.msg_type);
@@ -157,7 +192,7 @@ main(int argc, char *argv[])
  *  메세지 타입과 버퍼를 입력받아
  *  해당 함수 실행
  */
-    char *
+char *
 process_message(packet *msg)
 {
     int msg_type = htons(msg->header.msg_type);
@@ -179,7 +214,7 @@ process_message(packet *msg)
     }
 }
 
-    packet *
+packet *
 create_message(char *data, int req_type)
 {
     packet *msg;
@@ -254,12 +289,13 @@ create_message(char *data, int req_type)
     return msg;
 }
 
-void sig_handler(int signo)
+void 
+sig_handler(int signo)
 {
     puts("SIGINT RECEIVED");
 }
 
-    void
+void
 logging(char *msg)
 {
     char *clntip = inet_ntoa(clnt_addr.sin_addr);
