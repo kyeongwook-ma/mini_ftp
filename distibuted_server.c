@@ -3,6 +3,9 @@
 #include <time.h>
 #include <signal.h>
 
+#define MALLOC(X) (X *)malloc(sizeof(X))
+#define MEMSET(X) memset(X, 0, sizeof(X))
+
 char *process_message(packet *);
 void logging(char *);
 packet *create_message(char *, int);
@@ -12,17 +15,22 @@ void sig_handler(int signo);
 typedef struct sockaddr_in sock_addr;
 sock_addr clnt_addr;
 
+typedef struct st_multiplex_fd {
+    fd_set *reads, *cpy_reads;
+    int fd_max, fd_num;
+}mfd;
+
 
 bool
-bind_serv_addr(int *serv_sock, sock_addr *serv_addr)
+bind_serv_addr(int serv_sock, sock_addr *serv_addr)
 {
-    return bind(*serv_sock, (struct sockaddr *)serv_addr, sizeof(*serv_addr));
+    return bind(serv_sock, (struct sockaddr *)serv_addr, sizeof(*serv_addr));
 }
 
 bool
-listen_from_clnt(int *serv_sock, int capacity)
+listen_from_clnt(int serv_sock, int capacity)
 {
-    return listen(*serv_sock, capacity);
+    return listen(serv_sock, capacity);
 }
 
 int 
@@ -39,20 +47,47 @@ create_serv_sock(sock_addr *serv_addr, int port)
 }
 
 int
-init_IO_multiplexing(int serv_sock, fd_set *reads)
+init_IO_multiplexing(int serv_sock, mfd *fd)
 {
-    FD_ZERO(reads);
-    FD_SET(serv_sock, reads);
-    return serv_sock;
+    FD_ZERO(fd->reads);
+    FD_SET(serv_sock, fd->reads);
+    fd->fd_max = serv_sock;
 }
 
 void 
-close_serv(int serv_sock, fd_set *reads)
+close_serv(int serv_sock, mfd *fd)
 {
-    FD_CLR(serv_sock, reads);
+    FD_CLR(serv_sock, fd->reads);
     shutdown(serv_sock, SHUT_WR);
     logging("closed");
 }
+
+struct timeval*
+init_timeout(int sec, int usec)
+{
+    struct timeval *timeout;
+    timeout->tv_sec = sec;
+    timeout->tv_usec = usec;
+
+    return timeout;
+}
+
+void
+accept_clnt_multiplexed(int serv_sock, mfd *fd)
+{
+    int clnt_sock;
+    sock_addr clnt_addr;
+    int clnt_addr_size = sizeof(clnt_addr);
+    
+    clnt_sock = accept(serv_sock, (struct sockaddr*)&clnt_addr, &clnt_addr_size);
+
+    FD_SET(clnt_sock, fd->reads);
+ 
+    if(fd->fd_max < clnt_sock)
+        fd->fd_max = clnt_sock;
+
+}
+
 
 int
 main(int argc, char *argv[])
@@ -60,62 +95,53 @@ main(int argc, char *argv[])
     int serv_sock, clnt_sock;
     int option = 1;
     sock_addr serv_addr;
-    struct timeval timeout;
     packet recv_msg;
     msg_header recv_header;
     packet *send_msg;
 
-    fd_set reads, cpy_reads;
 
     socklen_t addr_size;
-    int fd_max, fd_num, i;
+    int i;
+
+    mfd *fd = 0;
+    
+    MEMSET(fd);
     char buf[BUF_SIZE] = {0, };
 
-    serv_sock = create_serv_sock(&serv_addr, atoi(argv[1]));
+    serv_sock = create_serv_sock(&serv_addr, 7777);
 
     signal(SIGINT, (void *)sig_handler);
 
-    if(bind_serv_addr(&serv_sock, &serv_addr) == -1 )
+    if(bind_serv_addr(serv_sock, &serv_addr) == -1 )
     {
         logging("connection error");
     }
-    if(listen_from_clnt(&serv_sock, 5) ==-1)
+    if(listen_from_clnt(serv_sock, 5) ==-1)
     {	
         logging("listen error");
     }
 
-    fd_max = init_IO_multiplexing(serv_sock, &reads);
+    init_IO_multiplexing(serv_sock, fd);
 
     while(1)
     {
-        cpy_reads = reads;
-        timeout.tv_sec = 5;
-        timeout.tv_usec = 5000;
+        fd->cpy_reads = fd->reads;
+        struct timeval *timeout = init_timeout(5, 5000);
 
-        if((fd_num = select(fd_max + 1, &cpy_reads, 0, 0, &timeout)) == -1)
+        if((fd->fd_num = select(fd->fd_max + 1, fd->cpy_reads, 0, 0, timeout)) == -1)
             break;
 
-        if(fd_num == 0)
+        if(fd->fd_num == 0)
             continue;
 
-        for(i = 0; i < fd_max + 1; ++i)
+        for(i = 0; i < fd->fd_max + 1; ++i)
         {
-            if(FD_ISSET(i, &cpy_reads))
+            if(FD_ISSET(i, fd->cpy_reads))
             {
                 if(i == serv_sock)
                 {
-                    addr_size = sizeof(clnt_addr);
 
-                    clnt_sock = accept(serv_sock, (struct sockaddr*)&clnt_addr,&addr_size);
-
-                    printf("client %s conncted\n", inet_ntoa(clnt_addr.sin_addr));
-
-                    FD_SET(clnt_sock, &reads);
-                    
-                    if(fd_max < clnt_sock)
-                        fd_max = clnt_sock;
-
-                    logging(inet_ntoa(clnt_addr.sin_addr));	
+                    accept_clnt_multiplexed(serv_sock, fd);
 
                 }
 
@@ -146,7 +172,7 @@ main(int argc, char *argv[])
 
                     // close 처리
                     if(str_len == 0 || msg_type == LOGOUT_REQ) {
-                        close_serv(i, &reads);
+                        close_serv(i, fd);
                     }
 
                     else  {		
