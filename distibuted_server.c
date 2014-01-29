@@ -16,10 +16,11 @@ typedef struct sockaddr_in sock_addr;
 sock_addr clnt_addr;
 
 typedef struct st_multiplex_fd {
-    fd_set *reads, *cpy_reads;
+    fd_set reads, cpy_reads;
     int fd_max, fd_num;
 }mfd;
 
+typedef struct timeval timeval;
 
 bool
 bind_serv_addr(int serv_sock, sock_addr *serv_addr)
@@ -49,25 +50,25 @@ create_serv_sock(sock_addr *serv_addr, int port)
 int
 init_IO_multiplexing(int serv_sock, mfd *fd)
 {
-    FD_ZERO(fd->reads);
-    FD_SET(serv_sock, fd->reads);
+    FD_ZERO(&(fd->reads));
+    FD_SET(serv_sock, &(fd->reads));
     fd->fd_max = serv_sock;
 }
 
 void 
 close_serv(int serv_sock, mfd *fd)
 {
-    FD_CLR(serv_sock, fd->reads);
+    FD_CLR(serv_sock, &(fd->reads));
     shutdown(serv_sock, SHUT_WR);
     logging("closed");
 }
 
-struct timeval*
+timeval
 init_timeout(int sec, int usec)
 {
-    struct timeval *timeout;
-    timeout->tv_sec = sec;
-    timeout->tv_usec = usec;
+    timeval timeout;
+    timeout.tv_sec = sec;
+    timeout.tv_usec = usec;
 
     return timeout;
 }
@@ -81,13 +82,26 @@ accept_clnt_multiplexed(int serv_sock, mfd *fd)
     
     clnt_sock = accept(serv_sock, (struct sockaddr*)&clnt_addr, &clnt_addr_size);
 
-    FD_SET(clnt_sock, fd->reads);
+    FD_SET(clnt_sock, &(fd->reads));
  
     if(fd->fd_max < clnt_sock)
         fd->fd_max = clnt_sock;
 
 }
 
+void
+process_request(int clnt_sock)
+{
+    int str_len = 0;
+    int header_size = sizeof(msg_header);
+    packet recv_msg, send_msg;
+    msg_header *header;
+    
+    while(str_len < header_size) {
+        str_len = read(clnt_sock, (void *)header, header_size);
+    }
+
+}
 
 int
 main(int argc, char *argv[])
@@ -103,9 +117,8 @@ main(int argc, char *argv[])
     socklen_t addr_size;
     int i;
 
-    mfd *fd = 0;
+    mfd fd;
     
-    MEMSET(fd);
     char buf[BUF_SIZE] = {0, };
 
     serv_sock = create_serv_sock(&serv_addr, 7777);
@@ -121,27 +134,27 @@ main(int argc, char *argv[])
         logging("listen error");
     }
 
-    init_IO_multiplexing(serv_sock, fd);
+    init_IO_multiplexing(serv_sock, &fd);
 
     while(1)
     {
-        fd->cpy_reads = fd->reads;
-        struct timeval *timeout = init_timeout(5, 5000);
+        fd.cpy_reads = fd.reads;
+        timeval timeout = init_timeout(5, 5000);
 
-        if((fd->fd_num = select(fd->fd_max + 1, fd->cpy_reads, 0, 0, timeout)) == -1)
+        if((fd.fd_num = select(fd.fd_max + 1, &(fd.cpy_reads), 0, 0, &timeout)) == -1)
             break;
 
-        if(fd->fd_num == 0)
+        if(fd.fd_num == 0)
             continue;
 
-        for(i = 0; i < fd->fd_max + 1; ++i)
+        for(i = 0; i < fd.fd_max + 1; ++i)
         {
-            if(FD_ISSET(i, fd->cpy_reads))
+            if(FD_ISSET(i, &(fd.cpy_reads)))
             {
                 if(i == serv_sock)
                 {
 
-                    accept_clnt_multiplexed(serv_sock, fd);
+                    accept_clnt_multiplexed(serv_sock, &fd);
 
                 }
 
@@ -172,7 +185,7 @@ main(int argc, char *argv[])
 
                     // close 처리
                     if(str_len == 0 || msg_type == LOGOUT_REQ) {
-                        close_serv(i, fd);
+                        close_serv(i, &fd);
                     }
 
                     else  {		
