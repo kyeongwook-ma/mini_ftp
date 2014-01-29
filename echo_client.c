@@ -10,6 +10,34 @@
 void error_handling(char *);
 packet *create_message(char *);
 
+typedef struct st_cmd_type {
+	void *(*body_creator)(char *);
+	char *cmd_name;
+	int msg_type;
+}cmd_type;
+
+void *create_save_body(char *);
+void *create_save_body(char *);
+void *create_ls_body(char *);
+void *create_rmdir_body(char *);
+void *create_login_body(char *);
+void *create_mkdir_body(char *);
+void *create_cat_body(char *);
+void *create_cd_body(char *);
+void *create_logout_body(char *);
+
+static cmd_type cmd_list[] = {
+	{create_save_body, "save" },
+	{create_ls_body, "ls" },
+	{create_rmdir_body, "save" },
+	{create_login_body, "login"},
+	{create_mkdir_body, "mkdir"},
+	{create_cat_body, "cat"},
+	{create_cd_body, "cd"},
+	{create_logout_body, "logout"}
+};
+
+
 int main(int argc, char *argv[])
 {	
 	int sock;
@@ -125,178 +153,183 @@ void error_handling(char *message)
 	exit(1);
 }
 
-packet *create_message(char *command_line)
+void
+create_body(msg_body *body, char *command_line)
+{
+	int i = 0;
+
+	for(i = 0; i < sizeof(cmd_list) / sizeof(cmd_type); ++i) {
+		if(strstr(command_line, cmd_list[i].cmd_name)) {
+			strcpy(body->data, cmd_list[i].body_creator(command_line));			
+		}
+	}
+}
+
+void *
+create_save_body(char *command_line)
+{
+	char *filename = command_line;
+	char buf[BUF_SIZE] = {0,};
+	char *str;
+
+
+	filename = strtok(filename, " ");
+	filename = strtok(NULL, " ");
+
+	fgets(buf,BUF_SIZE, stdin);
+	buf[strlen(buf) - 1] = 0;
+			
+	strcat(filename, " ");
+	strcat(filename, buf);
+
+	puts(filename);
+	
+	return filename;
+}
+
+void *
+create_ls_body(char *command_line)
+{
+
+}
+
+void *
+create_login_body(char *command_line)
+{
+	int line_size = 10;
+	
+	char *id;
+	char *pw;
+	
+	puts("\nID를 입력하시오 : ");
+	fgets(id,line_size,stdin);
+
+	puts("\nPW를 입력하시오 : ");
+	fgets(pw,line_size,stdin);
+
+	strcat(id," ");
+	strcat(id, pw);
+	
+	return id;
+}
+
+void *
+create_mkdir_body(char *command_line)
+{
+	char *foldername = command_line;
+
+
+	foldername = strtok(foldername, " ");
+	foldername = strtok(NULL, " ");
+
+	return foldername;
+}
+
+void *
+create_rmdir_body(char *command_line)
+{
+	char *foldername = command_line;
+
+	foldername = strtok(foldername, " ");
+	foldername = strtok(NULL, " ");
+
+	puts(foldername);
+
+	return foldername;
+
+}
+
+void *
+create_cat_body(char *command_line)
+{
+	char *filename = command_line;
+
+	filename = strtok(filename, " ");
+	filename = strtok(NULL, " ");
+		
+	return filename;
+}
+
+void *
+create_rm_body(char *command_line)
+{	
+	char *filename = command_line;
+
+	filename = strtok(filename, " ");
+	filename = strtok(NULL, " ");
+		
+	return filename; 
+}
+
+void *
+create_cd_body(char *command_line)
+{	
+	char *foldername = command_line;
+
+
+	
+	if(strcmp(command_line, "cd") == 0) {
+		foldername = NULL;
+	}
+	
+	else {
+		foldername = strtok(foldername, " ");
+		foldername = strtok(NULL, " ");
+	}
+
+	return foldername;
+}
+	
+
+void *
+create_cp_body(char *command_line)
+{
+	char *filename = command_line;		
+
+	
+	filename = strtok(filename, " ");
+	filename = strtok(NULL, "");
+
+	return filename;			
+}
+
+void *
+create_logout_body(char *command_line)
+{	
+	return "bye";	
+}
+
+void
+create_header(msg_header *header, int msg_type, int body_size)
+{
+	header->packet_size = htons(sizeof(msg_header) + body_size);
+	header->msg_type = htons(msg_type);
+	header->body_size = htons(body_size);
+}
+
+packet *
+create_message(char *command_line)
 {
 	packet *msg;
 	msg_header header;	
 	msg_body body;
 
 	int result = 0;
-	int packet_size = 0;
 	int msg_type = 0;
 	int body_size = 0;	
 
-	memset((void *)&header, 0x00, sizeof(msg_header));
-	memset((void *)&body, 0x00, sizeof(msg_body));
-
-
-	// 메세지 타입에 따라 바디 생성
-	if(strstr(command_line, "ls"))
-	{
-		msg_type = LS_REQ;
-	}
+	create_body(&body ,command_line);
 	
-	else if(strstr(command_line, "save"))
-	{
-		char *filename = command_line;
-		char buf[BUF_SIZE] = {0,};
-		char *str;
-
-		msg_type = SAVE_REQ;
-	
-		filename = strtok(filename, " ");
-		filename = strtok(NULL, " ");
-
-		fgets(buf,BUF_SIZE, stdin);
-		buf[strlen(buf) - 1] = 0;
-		
-	
-		strcat(filename, " ");
-		strcat(filename, buf);
-
-		puts(filename);
-
-		strcpy(body.data, filename);
-
-	}
-	
-	else if(strstr(command_line, "login"))
-	{
-		int line_size = 10;
-	
-		char id[line_size];
-		char pw[line_size];
-
-		msg_type = LOGIN_REQ;
-	
-		puts("\nID를 입력하시오 : ");
-		fgets(id,line_size,stdin);
-
-		puts("\nPW를 입력하시오 : ");
-		fgets(pw,line_size,stdin);
-
-		strcat(id," ");
-		strcat(id, pw);
-		strcpy(body.data, id);
-
-	}
-
-	else if(strstr(command_line, "mkdir"))
-	{
-		char *foldername = command_line;
-
-		msg_type = MKDIR_REQ;
-
-		foldername = strtok(foldername, " ");
-		foldername = strtok(NULL, " ");
-
-		strcpy(body.data, foldername);
-	}
-
-	else if(strstr(command_line, "rmdir"))
-	{
-		char *foldername = command_line;
-
-		
-		msg_type = RMDIR_REQ;
-
-		foldername = strtok(foldername, " ");
-		foldername = strtok(NULL, " ");
-
-		puts(foldername);
-
-		strcpy(body.data, foldername);
-
-	}
-
-	else if(strstr(command_line, "cat"))
-	{
-		char *filename = command_line;
-
-		msg_type = CAT_REQ;
-
-		filename = strtok(filename, " ");
-		filename = strtok(NULL, " ");
-		
-		strcpy(body.data, filename);
-	}
-
-	else if(strstr(command_line, "rm"))
-	{
-		char *filename = command_line;
-		msg_type = RM_REQ;
-
-		filename = strtok(filename, " ");
-		filename = strtok(NULL, " ");
-		
-		strcpy(body.data, filename); 
-	}
-
-	else if(strstr(command_line, "cd"))
-	{
-		char *foldername = command_line;
-
-		msg_type = CD_REQ;
-	
-		if(strcmp(command_line, "cd") == 0)
-		{
-			foldername = NULL;
-		}
-		else	
-		{
-			foldername = strtok(foldername, " ");
-			foldername = strtok(NULL, " ");
-		}
-
-		strcpy(body.data, foldername);
-	}
-	
-	
-	else if(strstr(command_line, "cp"))
-	{
-		char *filename = command_line;		
-
-		msg_type = CP_REQ;
-	
-		filename = strtok(filename, " ");
-		filename = strtok(NULL, "");
-
-		strcpy(body.data, filename);	
-		
-	}
-
-	else if(strstr(command_line, "logout"))
-	{
-		msg_type = LOGOUT_REQ;
-		strcpy(body.data, "bye");	
-	}
-
 	body_size = sizeof(body);
-		
-	packet_size = body_size + sizeof(msg_header);
-	
-
+			
 	// 헤더에 정보 저장
-	header.packet_size = htons(packet_size);
-	header.msg_type = htons(msg_type);
-	header.body_size = htons(body_size);
+	create_header(&header, msg_type, body_size);
 
-	msg = (packet *)malloc(packet_size);
+	msg = (packet *)malloc(sizeof(header) + sizeof(body));
 
 	// 메세지 저장
 	msg->header = header;
 	msg->body = body;
-
 
 	return msg;
 
