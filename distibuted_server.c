@@ -43,6 +43,9 @@ listen_from_clnt(int serv_sock, int capacity)
     return listen(serv_sock, capacity);
 }
 
+/*
+ * set address to socket
+ */
 int 
 create_serv_sock(sock_addr *serv_addr, int port)
 {
@@ -56,6 +59,9 @@ create_serv_sock(sock_addr *serv_addr, int port)
     return serv_sock;
 }
 
+/*
+ * init fd sets
+ */
 int
 init_IO_multiplexing(int serv_sock, mfd *fd)
 {
@@ -64,6 +70,9 @@ init_IO_multiplexing(int serv_sock, mfd *fd)
     fd->fd_max = serv_sock;
 }
 
+/*
+ * half close server
+ */
 void 
 close_serv(int serv_sock, mfd *fd)
 {
@@ -72,6 +81,9 @@ close_serv(int serv_sock, mfd *fd)
     logging("closed");
 }
 
+/*
+ * set timeout
+ */
 timeval
 init_timeout(int sec, int usec)
 {
@@ -82,6 +94,9 @@ init_timeout(int sec, int usec)
     return timeout;
 }
 
+/*
+ * accept client, register to fd set
+ */
 void
 accept_clnt_multiplexed(int serv_sock, mfd *fd)
 {
@@ -100,6 +115,9 @@ accept_clnt_multiplexed(int serv_sock, mfd *fd)
 
 }
 
+/*
+ * process client's request
+ */
 void
 process_request(int clnt_sock)
 {
@@ -249,8 +267,7 @@ main(int argc, char *argv[])
 
 
 /*
- *  메세지 타입과 버퍼를 입력받아
- *  해당 함수 실행
+ * create a response message
  */
 char *
 process_message(packet *msg)
