@@ -22,6 +22,14 @@ typedef struct st_multiplex_fd {
 
 typedef struct timeval timeval;
 
+bool bind_serv_addr(int, sock_addr *);
+bool listen_from_clnt(int, int);
+int create_serv_sock(sock_addr *, int);
+int init_IO_multiplexing(int, mfd *);
+int close_serv(int, mfd *);
+void accept_clnt_multiplexed(int, mfd *);
+timeval init_timeout(int, int);
+
 bool
 bind_serv_addr(int serv_sock, sock_addr *serv_addr)
 {
@@ -79,9 +87,11 @@ accept_clnt_multiplexed(int serv_sock, mfd *fd)
     int clnt_sock;
     sock_addr clnt_addr;
     int clnt_addr_size = sizeof(clnt_addr);
-    
+ 
+ 	/* accept client */
     clnt_sock = accept(serv_sock, (struct sockaddr*)&clnt_addr, &clnt_addr_size);
 
+	/* register client to observed socket */
     FD_SET(clnt_sock, &(fd->reads));
  
     if(fd->fd_max < clnt_sock)
@@ -190,10 +200,11 @@ main(int argc, char *argv[])
 
                     recv_msg.header = recv_header;
 
-                    /* close socket */
+                    /* half close socket */
                     if(str_len == 0 || msg_type == LOGOUT_REQ) {
                         close_serv(i, &fd);
                     }
+
 
                     else  {		
                         
