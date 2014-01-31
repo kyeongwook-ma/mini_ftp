@@ -5,6 +5,7 @@
 
 #define MALLOC(X) (X *)malloc(sizeof(X))
 #define MEMSET(X) memset(X, 0, sizeof(X))
+#define READ_FROM_FD(COUNT, MAX, FD, DEST) while(COUNT < MAX) COUNT = read(FD, DEST, MAX);
 
 char *process_message(packet *);
 void logging(char *);
@@ -181,8 +182,10 @@ main(int argc, char *argv[])
                     int str_len = 0;
                     int header_size = sizeof(msg_header);
 
-                    // 헤더를 받음
-                    while(str_len < header_size)
+                    // 헤더를 받�
+                    READ_FROM_FD(str_len, header_size, i, (void *)&recv_header);
+					
+					while(str_len < header_size)
                     {
                         str_len = read(i, (void *)&recv_header, header_size);
                     }
