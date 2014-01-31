@@ -120,15 +120,20 @@ main(int argc, char *argv[])
     mfd fd;
     
     char buf[BUF_SIZE] = {0, };
+	
+	/* create server socket with port number */
+	serv_sock = create_serv_sock(&serv_addr, 7777);
 
-    serv_sock = create_serv_sock(&serv_addr, 7777);
-
+	/* register sig handler */
     signal(SIGINT, (void *)sig_handler);
 
+	/* bind address to server */
     if(bind_serv_addr(serv_sock, &serv_addr) == -1 )
     {
         logging("connection error");
     }
+
+	/* listen from client waiting queue 5 */
     if(listen_from_clnt(serv_sock, 5) ==-1)
     {	
         logging("listen error");
@@ -139,27 +144,29 @@ main(int argc, char *argv[])
     while(1)
     {
         fd.cpy_reads = fd.reads;
+
+		/* set timeout */
         timeval timeout = init_timeout(5, 5000);
 
+		/* IO multiplexing through select() */
         if((fd.fd_num = select(fd.fd_max + 1, &(fd.cpy_reads), 0, 0, &timeout)) == -1)
             break;
 
+		/* no connection */
         if(fd.fd_num == 0)
             continue;
 
-        for(i = 0; i < fd.fd_max + 1; ++i)
-        {
-            if(FD_ISSET(i, &(fd.cpy_reads)))
-            {
-                if(i == serv_sock)
-                {
-
+        for(i = 0; i < fd.fd_max + 1; ++i) {
+            if(FD_ISSET(i, &(fd.cpy_reads))) {
+				/* server socket */
+                if(i == serv_sock) {
+					/* accept client */
                     accept_clnt_multiplexed(serv_sock, &fd);
 
                 }
 
-                else
-                {
+				/* process client's request */
+                else {
 
                     int str_len = 0;
                     int header_size = sizeof(msg_header);
@@ -183,7 +190,7 @@ main(int argc, char *argv[])
 
                     recv_msg.header = recv_header;
 
-                    // close 처리
+                    /* close socket */
                     if(str_len == 0 || msg_type == LOGOUT_REQ) {
                         close_serv(i, &fd);
                     }
@@ -194,7 +201,7 @@ main(int argc, char *argv[])
 
                         int msg = ntohs(recv_msg.header.msg_type);
 
-                        // process message
+                        /* process message */
                         result = process_message(&recv_msg);
 
                         send_msg = create_message(result, msg);
